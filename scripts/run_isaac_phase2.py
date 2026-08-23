@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
+import os
 import sys
+import traceback
+from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -41,7 +43,10 @@ def main() -> None:
         task="reach_target",
         seed=42,
         parameters={"target_position": [2.0, 0.0], "physics_steps_per_action": 12},
-        hazards={"collapse_after_actions": 3},
+        # The reference run is a failure experiment: once the collapse occurs,
+        # it is terminal.  This records the consequence while keeping the
+        # headless container smoke test deterministic and bounded.
+        hazards={"collapse_after_actions": 3, "terminal_on_collapse": True},
     )
     runtime = IsaacSim50Runtime(sensor_output_dir=args.runs_dir / "camera")
     environment = IsaacSimEnvironment(runtime)
@@ -55,9 +60,14 @@ def main() -> None:
     )
     try:
         record = orchestrator.run_one()
-    finally:
-        environment.close()
-    print(json.dumps(record.to_dict(), indent=2, sort_keys=True))
+    except BaseException:
+        traceback.print_exc()
+        os._exit(1)
+    print(json.dumps(record.to_dict(), indent=2, sort_keys=True), flush=True)
+    # Isaac Sim 6.0.1 can abort while releasing active camera task groups.
+    # Artifacts are synchronously written above, and this is a disposable
+    # container process, so terminate without invoking Kit teardown.
+    os._exit(0)
 
 
 if __name__ == "__main__":

@@ -296,8 +296,12 @@ class IsaacSim50Runtime:
             resolution=(256, 256),
             frequency=60,
         )
-        self._set_beam_kinematic(True)
         self._world.reset()
+        # ``World.reset()`` restores each DynamicCuboid's default linear and
+        # angular velocity. PhysX rejects that reset operation for a body
+        # that is already kinematic, so make the support static only after
+        # all scene objects have completed their reset lifecycle.
+        self._set_beam_kinematic(True)
         self._camera.initialize()
         self._support_released = False
         self._simulation_time = 0.0
@@ -335,6 +339,10 @@ class IsaacSim50Runtime:
         )
 
     def close(self) -> None:
+        if self._camera is not None:
+            # Camera owns render-product subscriptions that must be released first.
+            self._camera.destroy()
+            self._camera = None
         self._app.close()
 
     def _set_beam_kinematic(self, enabled: bool) -> None:
