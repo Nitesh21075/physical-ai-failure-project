@@ -4,73 +4,59 @@
 )
 
 def Xform "Robot" (
-    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
     customData = {
-        string harness_role = "inspection_robot_proxy"
-        string harness_asset_policy = "self-contained proxy; replace reference at /World/Robot with compatible robot asset when one is approved"
-        string harness_interactive = "true"
-        string harness_control_model = "velocity-driven rigid-body rover proxy; contact impulses are physical but wheel/traction dynamics are intentionally deferred"
+        string harness_role = "nvidia_nova_carter_rover"
+        string harness_control_contract = "articulated wheeled rover; future worker/VLA must use its wheel articulation rather than teleporting the chassis"
+        string harness_asset_source = "NVIDIA Isaac Sim 6.0 asset root"
+        string harness_sensor_contract = "VLACamera is a stable RGB camera prim; the referenced Nova Carter asset also includes its own simulated sensor suite"
+    }
+    variants = {
+        string robot_model = "nvidia_nova_carter"
     }
 )
 {
-    double3 xformOp:translate = (-6.0, -1.0, 0.48)
+    double3 xformOp:translate = (-6, -1, 0.15)
     uniform token[] xformOpOrder = ["xformOp:translate"]
-    bool physics:rigidBodyEnabled = true
-    float physics:mass = 55
-    def Cube "Chassis" (
-        prepend apiSchemas = ["PhysicsCollisionAPI"]
-    )
-    {
-        float3 xformOp:scale = (0.62, 0.42, 0.30)
-        uniform token[] xformOpOrder = ["xformOp:scale"]
-        bool physics:collisionEnabled = true
-        rel material:binding = </World/Looks/RobotBlue>
-        rel material:binding:physics = </World/PhysicsMaterials/RoughConcrete>
+
+    variantSet "robot_model" = {
+        "nvidia_nova_carter" {
+            prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/Robots/NVIDIA/NovaCarter/nova_carter.usd@
+        }
+        "proxy_fallback" {
+            def Xform "FallbackProxy" (
+                prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            )
+            {
+                bool physics:rigidBodyEnabled = true
+                float physics:mass = 55
+                def Cube "CollisionAndVisual" (
+                    prepend apiSchemas = ["PhysicsCollisionAPI"]
+                )
+                {
+                    float3 xformOp:scale = (0.62, 0.42, 0.30)
+                    uniform token[] xformOpOrder = ["xformOp:scale"]
+                    bool physics:collisionEnabled = true
+                    rel material:binding = </World/Looks/RobotBlue>
+                    rel material:binding:physics = </World/PhysicsMaterials/RoughConcrete>
+                }
+            }
+        }
     }
-    def Cube "FrontBumper" (
-        prepend apiSchemas = ["PhysicsCollisionAPI"]
+
+    def Camera "VLACamera" (
         customData = {
-            string harness_role = "rover_contact_bumper"
+            string harness_role = "rover_egocentric_rgb_camera"
+            string harness_consumer = "future_vla_or_visual_policy"
+            string harness_capture_contract = "attach an Isaac camera wrapper to this prim; fixed path remains stable across robot variants"
         }
     )
     {
-        double3 xformOp:translate = (0.72, 0, -0.08)
-        float3 xformOp:scale = (0.10, 0.48, 0.16)
-        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
-        bool physics:collisionEnabled = true
-        rel material:binding = </World/Looks/SafetyYellow>
-        rel material:binding:physics = </World/PhysicsMaterials/SteelContact>
-    }
-    def Cube "SensorMast"
-    {
-        double3 xformOp:translate = (0.18, 0, 0.52)
-        float3 xformOp:scale = (0.10, 0.12, 0.28)
-        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
-        rel material:binding = </World/Looks/Steel>
-    }
-    def Sphere "Headlamp"
-    {
-        double3 xformOp:translate = (0.70, 0, 0.12)
-        uniform token[] xformOpOrder = ["xformOp:translate"]
-        float radius = 0.10
-        rel material:binding = </World/Looks/LampGlow>
-    }
-    def Cylinder "WheelLeftVisual"
-    {
-        double3 xformOp:translate = (-0.25, 0.50, -0.25)
-        float3 xformOp:rotateXYZ = (90, 0, 0)
+        float focalLength = 24
+        float horizontalAperture = 20.955
+        float verticalAperture = 15.2908
+        float2 clippingRange = (0.05, 100)
+        double3 xformOp:translate = (0.35, 0, 0.38)
+        float3 xformOp:rotateXYZ = (0, -90, 0)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
-        float radius = 0.24
-        float height = 0.14
-        rel material:binding = </World/Looks/Steel>
-    }
-    def Cylinder "WheelRightVisual"
-    {
-        double3 xformOp:translate = (-0.25, -0.50, -0.25)
-        float3 xformOp:rotateXYZ = (90, 0, 0)
-        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
-        float radius = 0.24
-        float height = 0.14
-        rel material:binding = </World/Looks/Steel>
     }
 }

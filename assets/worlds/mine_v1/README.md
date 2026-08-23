@@ -1,6 +1,6 @@
 # mine_v1: persistent mine failure-research world
 
-`mine_world.usda` is the directly openable entry stage. It composes the static drift, materials, lighting, physics defaults, three hazard zones, and a small self-contained wheeled inspection-robot proxy. All asset references are relative to this directory; the world has no Nucleus, `/Isaac`, or absolute host-path dependency.
+`mine_world.usda` is the directly openable entry stage. It composes the static drift, materials, lighting, physics defaults, three hazard zones, and NVIDIA's articulated Nova Carter rover. Mine-authored references are relative; the selected rover reference is the documented NVIDIA Isaac 6.0 cloud asset URL, with a local proxy fallback variant.
 
 ## Layout
 
@@ -9,12 +9,12 @@ mine_world.usda                 composed entry stage
 mine_base.usda                  static mine shell and props
 layers/                         physics, materials, lighting sublayers
 hazards/                        individually referenced hazard assets
-robots/inspection_robot.usda    reference-swappable robot proxy
+robots/inspection_robot.usda    Nova Carter reference + local proxy fallback variant
 previews/                       rendered fixed-camera images
 manifest.json                   stable prim registry for workers/tools
 ```
 
-The installed Isaac Sim 6.0.1 image was inspected before authoring. It does not include a portable built-in wheeled robot USD library, so v1 deliberately uses a repository-local proxy instead of embedding a brittle `/Isaac/...` or Nucleus path. `/World/Robot` stays stable and can later reference an approved robot USD without modifying the mine shell.
+The installed Isaac Sim 6.0.1 image was inspected before authoring and does not include a local portable robot pack. The default robot is therefore a network-resolved NVIDIA Isaac 6.0 Nova Carter asset. It has PhysX articulation, wheels, cameras, IMUs, and lidars; its 3D-content-sharing license remains an external dependency. `/World/Robot` stays stable, and `robot_model=proxy_fallback` preserves an entirely local fallback if the asset root is unavailable.
 
 ## Physics model
 
@@ -33,10 +33,10 @@ There is no timer, scripted collapse event, or scripted switch from kinematic to
 
 ## Rover-caused failures
 
-The v1 rover is deliberately a velocity-driven rigid-body proxy, not a fake
-event trigger. Its chassis and `FrontBumper` generate ordinary collision
-impulses; the current controller may drive it in global planar directions,
-while proper wheel articulation/traction remains a later robot-asset swap.
+The default rover is NVIDIA Nova Carter: a real articulated wheeled robot, not
+a fake event trigger. A future controller/VLA should command its wheel joints
+and consume `/World/Robot/VLACamera` (plus any selected built-in Nova Carter
+sensors). It must not teleport the chassis or invoke a `collapse` command.
 
 - **Roof support:** approach the negative-Y side of
   `SupportPrimary/PushFace`, then drive in positive Y. The support is a
@@ -46,7 +46,7 @@ while proper wheel articulation/traction remains a later robot-asset swap.
   `RetainingObject/PushFace`, then drive in positive Y. The dynamic retainer
   moves clear of the down-slope route, allowing the loose rocks to roll from
   the separate tilted ledge.
-- **Debris:** drive the bumper/chassis into `Debris01` or `Debris02`; both are
+- **Debris:** drive the chassis into `Debris01` or `Debris02`; both are
   independent rigid bodies and require no special trigger.
 
 These interaction recipes are registered in `manifest.json`. They are world

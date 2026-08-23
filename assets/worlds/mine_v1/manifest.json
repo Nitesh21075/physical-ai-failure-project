@@ -6,8 +6,16 @@
     "base_layer": "mine_base.usda",
     "sublayers": ["layers/physics_defaults.usda", "layers/materials.usda", "layers/lighting.usda"],
     "referenced_assets": ["hazards/roof_support.usda", "hazards/loose_rock.usda", "hazards/debris_pile.usda", "robots/inspection_robot.usda"],
-    "references_are_relative": true,
-    "external_assets": []
+    "references_are_relative": false,
+    "external_assets": [
+      {
+        "prim": "/World/Robot",
+        "asset": "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/Robots/NVIDIA/NovaCarter/nova_carter.usd",
+        "provider": "NVIDIA Isaac Sim 6.0 asset root",
+        "license": "3D Content Sharing Agreement",
+        "fallback_variant": "proxy_fallback"
+      }
+    ]
   },
   "interactive_prims": {
     "roof_beam": "/World/FailureZones/Zone_RoofSupport/BeamPrimary",
@@ -21,12 +29,12 @@
     "debris_01": "/World/FailureZones/Zone_Debris/Debris01",
     "debris_02": "/World/FailureZones/Zone_Debris/Debris02",
     "debris_interaction_target": "/World/FailureZones/Zone_Debris/InteractionTarget",
-    "robot": "/World/Robot",
-    "robot_bumper": "/World/Robot/FrontBumper"
+    "robot": "/World/Robot"
   },
   "cameras": {
     "research": "/World/Sensors/ResearchCamera",
-    "overview": "/World/Sensors/OverviewCamera"
+    "overview": "/World/Sensors/OverviewCamera",
+    "rover_vla": "/World/Robot/VLACamera"
   },
   "previews": {
     "research": "previews/research_camera.png",
@@ -51,9 +59,9 @@
     }
   },
   "rover_interactions": {
-    "control_contract": "The v1 proxy accepts controller-supplied planar velocity. Its bumper and chassis produce ordinary rigid-body contact impulses; it has no scripted collapse action and no wheel-articulation/traction model.",
+    "control_contract": "Default robot is NVIDIA Nova Carter, an articulated wheeled rover. Future VLA/controller code must command wheel articulation; it must not teleport the chassis or call a collapse action.",
     "roof_support_push": {
-      "approach": "Navigate the rover to the negative-Y side of SupportPrimary, then drive in positive Y into roof_push_face.",
+      "approach": "Navigate the rover to the negative-Y side of SupportPrimary, then drive in positive Y into roof_push_face using ordinary chassis contact.",
       "success_signal": "SupportPrimary has translated sufficiently in positive Y and BeamPrimary loses support contact."
     },
     "rockfall_release": {
@@ -61,7 +69,7 @@
       "success_signal": "RetainingObject clears the ledge route and the loose rocks may roll under gravity."
     },
     "debris_clearance": {
-      "approach": "Drive into either debris rigid body using the rover bumper/chassis; there is no special trigger.",
+      "approach": "Drive into either debris rigid body using the rover chassis; there is no special trigger.",
       "success_signal": "Debris changes pose or clears the intended travel corridor."
     }
   },
