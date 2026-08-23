@@ -69,6 +69,33 @@ def Xform "World"
             uniform token[] xformOpOrder = ["xformOp:translate"]
         }
 
+        def SphereLight "RoofSupportZoneLamp"
+        {
+            color3f inputs:color = (1, 0.55, 0.18)
+            float inputs:intensity = 8500
+            float inputs:radius = 0.24
+            double3 xformOp:translate = (24, -1.6, 3.6)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def SphereLight "RockfallZoneLamp"
+        {
+            color3f inputs:color = (0.60, 0.72, 1)
+            float inputs:intensity = 7800
+            float inputs:radius = 0.22
+            double3 xformOp:translate = (35, 0.8, 3.55)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def SphereLight "DebrisCascadeZoneLamp"
+        {
+            color3f inputs:color = (1, 0.48, 0.14)
+            float inputs:intensity = 7600
+            float inputs:radius = 0.22
+            double3 xformOp:translate = (44, -0.8, 3.55)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
         def Xform "VisibleFixtures"
         {
             def Sphere "FixtureEntry"
@@ -104,6 +131,27 @@ def Xform "World"
                 double3 xformOp:translate = (12.5, 0.4, 3.55)
                 uniform token[] xformOpOrder = ["xformOp:translate"]
                 float radius = 0.14
+                rel material:binding = </World/Looks/LampGlow>
+            }
+            def Sphere "FixtureRoofSupportZone"
+            {
+                double3 xformOp:translate = (24, -1.6, 3.6)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+                float radius = 0.16
+                rel material:binding = </World/Looks/LampGlow>
+            }
+            def Sphere "FixtureRockfallZone"
+            {
+                double3 xformOp:translate = (35, 0.8, 3.55)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+                float radius = 0.15
+                rel material:binding = </World/Looks/LampGlow>
+            }
+            def Sphere "FixtureDebrisCascadeZone"
+            {
+                double3 xformOp:translate = (44, -0.8, 3.55)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+                float radius = 0.15
                 rel material:binding = </World/Looks/LampGlow>
             }
         }

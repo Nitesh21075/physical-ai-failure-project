@@ -39,5 +39,25 @@ def Xform "World"
             float physics:dynamicFriction = 0.42
             float physics:restitution = 0.08
         }
+
+        def Material "UnstableSupportContact" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            # Deliberately lower than the surrounding concrete: this is the
+            # tunable contact material for the marginal roof support.
+            float physics:staticFriction = 0.26
+            float physics:dynamicFriction = 0.20
+            float physics:restitution = 0.03
+        }
+
+        def Material "LooseRockContact" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            float physics:staticFriction = 0.42
+            float physics:dynamicFriction = 0.34
+            float physics:restitution = 0.08
+        }
     }
 }

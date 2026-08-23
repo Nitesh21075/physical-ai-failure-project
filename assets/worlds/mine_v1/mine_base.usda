@@ -20,7 +20,9 @@ def Xform "World"
                 prepend apiSchemas = ["PhysicsCollisionAPI"]
             )
             {
-                double3 xformOp:translate = (17.8, 0, 2)
+                # Moved to the new far drift face.  The original end wall
+                # occupied the only connection to the extension.
+                double3 xformOp:translate = (49.8, 0, 2)
                 float3 xformOp:scale = (0.2, 4.2, 2.2)
                 uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
                 bool physics:collisionEnabled = true

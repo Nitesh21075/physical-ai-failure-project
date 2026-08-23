@@ -19,8 +19,10 @@ def Xform "Robot" (
     uniform token[] xformOpOrder = ["xformOp:translate"]
 
     variantSet "robot_model" = {
-        "nvidia_nova_carter" {
-            prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/Robots/NVIDIA/NovaCarter/nova_carter.usd@
+        "nvidia_nova_carter" (
+            references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/Robots/NVIDIA/NovaCarter/nova_carter.usd@
+        )
+        {
         }
         "proxy_fallback" {
             def Xform "FallbackProxy" (
