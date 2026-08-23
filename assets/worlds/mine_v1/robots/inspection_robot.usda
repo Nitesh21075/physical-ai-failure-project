@@ -1,0 +1,60 @@
+#usda 1.0
+(
+    defaultPrim = "Robot"
+)
+
+def Xform "Robot" (
+    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    customData = {
+        string harness_role = "inspection_robot_proxy"
+        string harness_asset_policy = "self-contained proxy; replace reference at /World/Robot with compatible robot asset when one is approved"
+        string harness_interactive = "true"
+    }
+)
+{
+    double3 xformOp:translate = (-6.0, -1.0, 0.48)
+    uniform token[] xformOpOrder = ["xformOp:translate"]
+    bool physics:rigidBodyEnabled = true
+    float physics:mass = 38
+    def Cube "Chassis" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        float3 xformOp:scale = (0.62, 0.42, 0.30)
+        uniform token[] xformOpOrder = ["xformOp:scale"]
+        bool physics:collisionEnabled = true
+        rel material:binding = </World/Looks/RobotBlue>
+    }
+    def Cube "SensorMast"
+    {
+        double3 xformOp:translate = (0.18, 0, 0.52)
+        float3 xformOp:scale = (0.10, 0.12, 0.28)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </World/Looks/Steel>
+    }
+    def Sphere "Headlamp"
+    {
+        double3 xformOp:translate = (0.70, 0, 0.12)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        float radius = 0.10
+        rel material:binding = </World/Looks/LampGlow>
+    }
+    def Cylinder "WheelLeftVisual"
+    {
+        double3 xformOp:translate = (-0.25, 0.50, -0.25)
+        float3 xformOp:rotateXYZ = (90, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        float radius = 0.24
+        float height = 0.14
+        rel material:binding = </World/Looks/Steel>
+    }
+    def Cylinder "WheelRightVisual"
+    {
+        double3 xformOp:translate = (-0.25, -0.50, -0.25)
+        float3 xformOp:rotateXYZ = (90, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        float radius = 0.24
+        float height = 0.14
+        rel material:binding = </World/Looks/Steel>
+    }
+}

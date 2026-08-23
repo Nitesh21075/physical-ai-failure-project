@@ -1,0 +1,58 @@
+{
+  "world_id": "mine_v1",
+  "entry_stage": "mine_world.usda",
+  "description": "Persistent composed OpenUSD underground mine/drift for physical-AI failure research.",
+  "composition": {
+    "base_layer": "mine_base.usda",
+    "sublayers": ["layers/physics_defaults.usda", "layers/materials.usda", "layers/lighting.usda"],
+    "referenced_assets": ["hazards/roof_support.usda", "hazards/loose_rock.usda", "hazards/debris_pile.usda", "robots/inspection_robot.usda"],
+    "references_are_relative": true,
+    "external_assets": []
+  },
+  "interactive_prims": {
+    "roof_beam": "/World/FailureZones/Zone_RoofSupport/BeamPrimary",
+    "roof_support": "/World/FailureZones/Zone_RoofSupport/SupportPrimary",
+    "roof_interaction_target": "/World/FailureZones/Zone_RoofSupport/InteractionTarget",
+    "rock_01": "/World/FailureZones/Zone_Rockfall/Rock01",
+    "rock_02": "/World/FailureZones/Zone_Rockfall/Rock02",
+    "rock_retainer": "/World/FailureZones/Zone_Rockfall/RetainingObject",
+    "debris_01": "/World/FailureZones/Zone_Debris/Debris01",
+    "debris_02": "/World/FailureZones/Zone_Debris/Debris02",
+    "debris_interaction_target": "/World/FailureZones/Zone_Debris/InteractionTarget",
+    "robot": "/World/Robot"
+  },
+  "cameras": {
+    "research": "/World/Sensors/ResearchCamera",
+    "overview": "/World/Sensors/OverviewCamera"
+  },
+  "previews": {
+    "research": "previews/research_camera.png",
+    "overview": "previews/overview_camera.png",
+    "status": "temporary_composition_previews_pending_isaac_rtx_render"
+  },
+  "hazard_zones": {
+    "roof_support": {
+      "root": "/World/FailureZones/Zone_RoofSupport",
+      "physical_status": "operational",
+      "mechanism": "A dynamic beam rests on a separate dynamic support. Moving the support away removes contact and gravity drops the beam."
+    },
+    "rockfall": {
+      "root": "/World/FailureZones/Zone_Rockfall",
+      "physical_status": "staged",
+      "mechanism": "Two dynamic loose rocks rest on a ledge behind a removable kinematic retainer."
+    },
+    "debris": {
+      "root": "/World/FailureZones/Zone_Debris",
+      "physical_status": "staged",
+      "mechanism": "Two dynamic debris blocks visibly obstruct the drift."
+    }
+  },
+  "safe_override_operations": [
+    "Move or set kinematic state of SupportPrimary in a stronger experiment/session layer.",
+    "Adjust mass, friction/contact material, and rigid-body attributes of listed interactive prims.",
+    "Move RetainingObject or perturb Rock01/Rock02 in an experiment layer.",
+    "Move/reorient /World/Robot or replace only its reference with a compatible robot asset.",
+    "Add approved experiment objects under /World/FailureZones or a dedicated experiment scope."
+  ],
+  "immutable_base_policy": "Do not write experiments back into mine_world.usda or its component asset layers; compose stronger override/session layers."
+}

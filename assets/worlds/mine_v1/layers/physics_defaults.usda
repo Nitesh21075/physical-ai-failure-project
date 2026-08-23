@@ -1,0 +1,22 @@
+#usda 1.0
+(
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def PhysicsScene "PhysicsScene" (
+        customData = {
+            string harness_role = "physics_scene"
+            string harness_units = "meters, kilograms, seconds"
+        }
+    )
+    {
+        vector3f physics:gravityDirection = (0, 0, -1)
+        float physics:gravityMagnitude = 9.81
+        int physxScene:solverPositionIterationCount = 16
+        int physxScene:solverVelocityIterationCount = 2
+        bool physxScene:enableCCD = true
+    }
+}
