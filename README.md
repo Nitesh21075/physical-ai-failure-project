@@ -10,6 +10,10 @@ The core idea is to run robot experiments in interchangeable environments (initi
 - **Plan A — Neural World Model Environment:** if the available world-model API supports closed-loop robotics interaction, make the neural world model the primary environment.
 - **Plan C — Neural vs Physics:** run equivalent experiments in a neural world model and Isaac Sim, compare trajectories/outcomes, and collect high-value discrepancies and rare physical failures.
 
+Plan C's capability-gated paired-comparison design is documented in
+[`docs/PLAN_C.md`](docs/PLAN_C.md). It keeps Isaac physical outcomes distinct
+from non-authoritative Reactor video evidence.
+
 ## Important definition of failure
 
 A failure is not merely the robot failing its task.
