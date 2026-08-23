@@ -14,6 +14,24 @@ Plan C's capability-gated paired-comparison design is documented in
 [`docs/PLAN_C.md`](docs/PLAN_C.md). It keeps Isaac physical outcomes distinct
 from non-authoritative Reactor video evidence.
 
+## Local experiment review
+
+`runs/` remains the authoritative artifact store. Rebuild its small SQLite
+index (and derive Isaac PNG/MP4 replay plus Reactor media manifests) with:
+
+```bash
+.venv/bin/python scripts/reindex_runs.py --runs-dir runs --database runs/experiments.sqlite3
+```
+
+Run the local-only Plan C review dashboard with:
+
+```bash
+.venv/bin/python scripts/run_dashboard.py --database runs/experiments.sqlite3 --port 8000
+```
+
+See [`docs/EXPERIMENT_PERSISTENCE_DASHBOARD.md`](docs/EXPERIMENT_PERSISTENCE_DASHBOARD.md)
+for the database boundary, artifacts, and SSH-forwarded AWS workflow.
+
 ## Important definition of failure
 
 A failure is not merely the robot failing its task.

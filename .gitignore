@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .venv/
+*.egg-info/
 .env
 .env.*
 !.env.example
@@ -11,7 +12,7 @@ __pycache__/
 # Generated experiment artifacts
 runs/
 artifacts/
-media/
+/media/
 *.mp4
 *.webm
 *.avi
