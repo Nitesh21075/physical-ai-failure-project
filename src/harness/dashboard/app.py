@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request as URLRequest
+from urllib.request import urlopen
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from harness.pairing import PairedCaptureService, PairingError
 from harness.persistence.store import ExperimentStore, ReviewState
+from harness.research.campaign import CampaignState, ResearchCampaignStore
 
 
 def _timeline(trajectory_path: str | None) -> list[dict[str, Any]]:
@@ -60,6 +67,24 @@ class ReviewUpdate(BaseModel):
     review_state: ReviewState
 
 
+class CampaignCreate(BaseModel):
+    objective: str
+    experiment_budget: int
+    constraints: dict[str, Any] = {}
+    model_provider: str | None = None
+    model_name: str | None = None
+
+
+class OperatorInstructionCreate(BaseModel):
+    instruction: str
+
+
+class PairCaptureCreate(BaseModel):
+    isaac_run_id: str
+    objective: str = ""
+    model: str | None = None
+
+
 _STYLE = """
 :root{--bg:#0a1020;--panel:#101a30;--line:#263552;--text:#edf3ff;--muted:#9dabc2;--isaac:#3ad8b0;--reactor:#ae8cff;--red:#ff6685;--amber:#ffbf5c;--green:#57d68d;--blue:#69b9ff}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 18% 0,#172948 0,transparent 35%),var(--bg);color:var(--text);font:15px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:inherit;text-decoration:none}button,select{font:inherit}button{cursor:pointer}.shell{max-width:1500px;margin:auto;padding:28px}.topbar{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:25px}.eyebrow{color:var(--blue);font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.title{font-size:clamp(28px,4vw,46px);letter-spacing:-.04em;margin:3px 0 7px}.subtitle{margin:0;color:var(--muted);font-size:16px}.authority{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:7px 11px;color:var(--muted);font-size:12px;white-space:nowrap}.dot{width:7px;height:7px;border-radius:50%;background:var(--reactor)}.grid{display:grid;gap:16px}.summary-grid{grid-template-columns:repeat(4,1fr);margin:22px 0}.card,.metric,.viewport,.details-card{background:linear-gradient(145deg,rgba(25,38,65,.95),rgba(15,25,45,.95));border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 45px rgba(0,0,0,.16)}.metric{padding:16px}.metric .number{font-size:27px;font-weight:800;letter-spacing:-.04em}.metric .label,.micro{color:var(--muted);font-size:12px}.section-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:30px 0 14px}.section-head h2{font-size:18px;margin:0}.pairs{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}.pair-card{padding:14px;transition:transform .16s,border-color .16s}.pair-card:hover{transform:translateY(-2px);border-color:#4d6391}.pair-card .visuals{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:13px 0}.thumb{height:116px;background:#0a1223;border-radius:10px;overflow:hidden;display:grid;place-items:center;color:var(--muted);font-size:12px}.thumb img{width:100%;height:100%;object-fit:cover}.pair-title{font-weight:750;font-size:17px;margin:2px 0}.pair-meta{color:var(--muted);font-size:13px}.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.spread{justify-content:space-between}.badge{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:99px;padding:3px 8px;font-size:11px;font-weight:800;letter-spacing:.02em;text-transform:uppercase}.badge.red{color:var(--red);background:#ff668515}.badge.amber{color:var(--amber);background:#ffbf5c15}.badge.green{color:var(--green);background:#57d68d15}.badge.isaac{color:var(--isaac);background:#3ad8b015}.badge.reactor{color:var(--reactor);background:#ae8cff15}.primary-action{display:inline-flex;background:var(--blue);color:#071222;border-radius:8px;padding:8px 11px;font-size:13px;font-weight:800}.standalone{padding:0 15px 14px}.standalone summary{padding:14px 0;cursor:pointer;font-weight:700}.run-row{display:flex;justify-content:space-between;gap:14px;padding:12px 0;border-top:1px solid var(--line);color:var(--muted)}.run-row strong{color:var(--text)}.back{color:var(--muted);font-weight:700;font-size:13px}.pair-top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px}.pair-name{font-weight:800;font-size:20px}.summary-strip{grid-template-columns:repeat(4,1fr);margin:0 0 18px}.summary-strip .metric{min-height:104px}.summary-strip strong{display:block;font-size:15px;margin:4px 0}.comparison-grid{grid-template-columns:1fr 1fr;gap:18px}.viewport{overflow:hidden;min-width:0}.viewport-head{padding:15px 16px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.viewport h2{font-size:18px;margin:0}.viewport.isaac{border-top:3px solid var(--isaac)}.viewport.reactor{border-top:3px solid var(--reactor)}.media-stage{height:min(54vh,590px);min-height:350px;background:#050a14;display:grid;place-items:center;position:relative}.media-stage video,.media-stage img{height:100%;width:100%;object-fit:contain}.empty-media{color:var(--muted);max-width:250px;text-align:center}.media-controls{padding:10px 14px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);color:var(--muted);font-size:12px}.media-controls button{background:transparent;border:1px solid var(--line);color:var(--text);border-radius:7px;padding:5px 9px}.media-controls button:disabled{opacity:.35;cursor:not-allowed}.filmstrip{display:flex;gap:8px;overflow:auto;padding:10px 13px 14px;background:#0b1426}.filmstrip button{padding:0;border:2px solid transparent;border-radius:7px;background:#111;min-width:72px;height:53px;overflow:hidden}.filmstrip button.active{border-color:var(--blue)}.filmstrip img{width:100%;height:100%;object-fit:cover}.below-grid{grid-template-columns:1.05fr .95fr .8fr;margin-top:18px}.details-card{padding:16px}.details-card h2{font-size:16px;margin:0 0 10px}.details-card p{margin:6px 0;color:var(--muted)}.timeline{list-style:none;margin:0;padding:0}.timeline li{border-left:2px solid var(--line);padding:0 0 12px 13px;margin-left:5px;position:relative}.timeline li:before{content:"";position:absolute;width:9px;height:9px;border-radius:50%;left:-5.5px;top:5px;background:var(--blue)}.timeline li.environmental_event:before,.timeline li.termination:before{background:var(--red)}.timeline .time{color:var(--blue);font-size:12px;font-weight:800}.review select{width:100%;background:#0c1527;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px}.review button{background:var(--blue);color:#071222;border:0;border-radius:8px;padding:9px 12px;font-weight:800;margin-top:9px}.save-status{min-height:20px;font-size:12px;color:var(--green);margin:8px 0 0}.technical{margin-top:18px}.technical details{border-top:1px solid var(--line);padding:12px 0}.technical summary{cursor:pointer;font-weight:700}.technical pre{white-space:pre-wrap;overflow:auto;color:var(--muted);font-size:12px;margin:10px 0 0}.artifact-links a{display:inline-block;margin:0 7px 7px 0;color:var(--blue);font-size:12px}.notice{border-left:3px solid var(--amber);padding:8px 10px;background:#ffbf5c10;color:#ffd99a;font-size:13px;border-radius:0 8px 8px 0}@media(max-width:900px){.summary-grid,.summary-strip,.below-grid{grid-template-columns:repeat(2,1fr)}.comparison-grid{grid-template-columns:1fr}.media-stage{height:55vw;min-height:300px}.topbar{display:block}.authority{margin-top:14px}}@media(max-width:560px){.shell{padding:18px}.summary-grid,.summary-strip{grid-template-columns:1fr}.run-row{display:block}.run-row>*{display:block;margin:3px 0}.media-stage{min-height:240px}}
 """
@@ -69,11 +94,22 @@ _THEME_STYLE = """
 :root{--bg:#f4f7fb;--panel:#fff;--line:#d8e1ee;--text:#162235;--muted:#62728a;--blue:#256bc0}.authority{background:#fff}.card,.metric,.viewport,.details-card{background:linear-gradient(145deg,#fff,#f8fbff);box-shadow:0 16px 38px rgba(29,54,88,.09)}.thumb,.filmstrip{background:#edf2f8}.filmstrip button{background:#dce5f0}.media-controls{background:#fff}.media-controls button{color:var(--text);background:#fff;border-color:var(--line)}.review select{background:#fff;color:var(--text);border-color:var(--line)}body{background:radial-gradient(circle at 18% 0,#dcecff 0,transparent 35%),var(--bg)}#theme-toggle{position:fixed;z-index:10;right:18px;bottom:18px;border:1px solid var(--line);border-radius:999px;padding:7px 10px;background:var(--panel);color:var(--text);font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,.13)}body.dark{--bg:#111315;--panel:#1a1d20;--line:#343a40;--text:#f0f2f4;--muted:#a7afb8;--blue:#7eb8ff;background:radial-gradient(circle at 18% 0,#24282c 0,transparent 35%),#111315}body.dark .authority,body.dark .media-controls,body.dark .media-controls button,body.dark .review select{background:#1a1d20;color:var(--text);border-color:var(--line)}body.dark .card,body.dark .metric,body.dark .viewport,body.dark .details-card{background:linear-gradient(145deg,#202428,#151719);box-shadow:0 18px 45px rgba(0,0,0,.3)}body.dark .thumb,body.dark .filmstrip{background:#0d0f11}body.dark .filmstrip button{background:#000}
 """
 
+_REACTOR_STYLE = """
+.reactor-layout{grid-template-columns:minmax(0,1.65fr) minmax(310px,.8fr);align-items:start}.reactor-controls{display:grid;gap:12px}.reactor-controls h2{margin-bottom:0}.reactor-controls label{display:grid;gap:6px;color:var(--muted);font-size:12px;font-weight:700}.reactor-controls textarea,.reactor-controls input[type=number],.reactor-controls input[type=file]{width:100%;font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px}.reactor-controls textarea{resize:vertical}.reactor-controls button,.navigation button{border:1px solid var(--line);border-radius:8px;padding:9px 12px;background:var(--panel);color:var(--text);font-weight:750}.reactor-controls button:disabled{opacity:.45;cursor:not-allowed}.reactor-controls .live-primary,.navigation #stop-reactor{background:var(--blue);color:#071222;border-color:transparent}.navigation{margin-top:18px}.navigation .section-head{margin:0 0 12px}.nav-grids{display:flex;gap:32px;flex-wrap:wrap}.nav-group h3{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 8px}.control-pad{display:grid;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(3,42px);gap:7px;margin-bottom:12px}.control-pad .north{grid-column:2;grid-row:1}.control-pad .west{grid-column:1;grid-row:2}.control-pad .east{grid-column:3;grid-row:2}.control-pad .south{grid-column:2;grid-row:3}.control-pad button.active{border-color:var(--reactor);box-shadow:0 0 0 2px #ae8cff35}.media-stage #reactor-video{display:none}.media-stage #reactor-video.active{display:block}.media-stage #video-placeholder.hidden{display:none}@media(max-width:900px){.reactor-layout{grid-template-columns:1fr}.reactor-controls{grid-template-columns:1fr 1fr}.reactor-controls h2,.reactor-controls p{grid-column:1/-1}}@media(max-width:560px){.reactor-controls{grid-template-columns:1fr}.nav-grids{gap:20px}}
+"""
+
+_RECORDING_SELECTOR_STYLE = """
+.recording-switcher{margin:0 0 18px;padding:13px 16px;display:flex;align-items:center;gap:12px}.recording-switcher label{font-size:12px;font-weight:800;color:var(--muted);white-space:nowrap}.recording-switcher select{min-width:min(520px,100%);flex:1;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:inherit}@media(max-width:560px){.recording-switcher{display:grid;gap:6px}.recording-switcher select{min-width:0;width:100%}}
+"""
+
 _LIBRARY_BODY = """
-<div class="shell"><header class="topbar"><div><div class="eyebrow">Plan C experiment review</div><h1 class="title">Physical AI Failure Harness</h1><p class="subtitle">Visual comparison of physics-grounded simulation and neural-world evidence.</p></div><div class="authority"><span class="dot"></span>Reactor evidence is not physics ground truth</div></header><section class="grid summary-grid" id="metrics"></section><section><div class="section-head"><h2>Paired experiment library</h2><span class="micro">Select a recording to review the comparison</span></div><div class="grid pairs" id="pairs"></div></section><details class="card standalone"><summary>Standalone experiments <span class="micro">(recorded without a paired comparison)</span></summary><div id="runs"></div></details></div>
+<div class="shell"><header class="topbar"><div><div class="eyebrow">Plan C experiment review</div><h1 class="title">Physical AI Failure Harness</h1><p class="subtitle">Visual comparison of physics-grounded simulation and neural-world evidence.</p></div><div class="row"><a class="primary-action" href="/reactor">Open live Reactor</a><div class="authority"><span class="dot"></span>Reactor evidence is not physics ground truth</div></div></header><section class="grid summary-grid" id="metrics"></section><section><div class="section-head"><h2>Paired experiment library</h2><span class="micro">Select a recording to review the comparison</span></div><div class="grid pairs" id="pairs"></div></section><details class="card standalone"><summary>Standalone experiments <span class="micro">(recorded without a paired comparison)</span></summary><div id="runs"></div></details></div>
+"""
+_REACTOR_BODY = """
+<div class="shell reactor-live"><header class="topbar"><div><div class="eyebrow">Live neural-world session</div><h1 class="title">Reactor control room</h1><p class="subtitle">Navigate a LingBot World 2 video world in real time. This is visual evidence, not a physics simulator.</p></div><div class="row"><a class="back" href="/">← Experiment library</a><span class="authority"><span class="dot"></span><span id="reactor-status">Checking configuration…</span></span></div></header><div class="grid reactor-layout"><section class="viewport reactor"><div class="viewport-head"><div><span class="badge reactor">Reactor / LingBot World 2</span><h2>Live video</h2></div><span class="micro" id="chunk-status">No session</span></div><div class="media-stage"><video id="reactor-video" autoplay playsinline muted></video><div class="empty-media" id="video-placeholder">Connect a session, choose a seed image, and start generating.</div></div></section><aside class="details-card reactor-controls"><h2>Paired capture</h2><label>Isaac recording<select id="paired-isaac-run"><option>Loading Isaac recordings…</option></select></label><label>Research objective<textarea id="paired-objective" rows="2" placeholder="Optional context for the world-model prompt."></textarea></label><div class="row"><button class="live-primary" id="prepare-pair">Prepare paired run</button><button id="finish-pair" disabled>Finish & save pair</button></div><p class="micro">Preparation sends the Isaac initial frame and structured context to Responses, then starts and records the Reactor session.</p><h2>Manual session</h2><label>Scene prompt<textarea id="reactor-prompt" rows="5" placeholder="Describe the world you want to explore."></textarea></label><label>Seed image<input id="reactor-image" type="file" accept="image/*"></label><label>Seed<input id="reactor-seed" type="number" min="0" value="42"></label><label>Look speed <span id="speed-value">5°/frame</span><input id="reactor-speed" type="range" min="0" max="30" value="5"></label><div class="row"><button id="connect-reactor">Connect</button><button id="start-reactor" disabled>Start manual world</button></div><div class="row"><button id="pause-reactor" disabled>Pause</button><button id="reset-reactor" disabled>Reset</button></div><p class="save-status" id="reactor-message" role="status"></p><p class="micro">Controls change at the next generated chunk. Stop controls are sent explicitly when a key is released.</p></aside></div><section class="details-card navigation"><div class="section-head"><h2>Navigation</h2><span class="micro">WASD moves · arrow keys look · release to stop</span></div><div class="nav-grids"><div class="nav-group"><h3>Move</h3><div class="control-pad"><button class="north" data-control="move_longitudinal" data-value="forward" aria-label="Move forward">W</button><button class="west" data-control="move_lateral" data-value="strafe_left" aria-label="Strafe left">A</button><button class="east" data-control="move_lateral" data-value="strafe_right" aria-label="Strafe right">D</button><button class="south" data-control="move_longitudinal" data-value="back" aria-label="Move backward">S</button></div></div><div class="nav-group"><h3>Look</h3><div class="control-pad"><button class="north" data-control="look_vertical" data-value="up" aria-label="Look up">↑</button><button class="west" data-control="look_horizontal" data-value="left" aria-label="Look left">←</button><button class="east" data-control="look_horizontal" data-value="right" aria-label="Look right">→</button><button class="south" data-control="look_vertical" data-value="down" aria-label="Look down">↓</button></div></div></div><button id="stop-reactor">Stop all motion</button></section><section class="technical details-card"><details><summary>Transport boundary</summary><p>A paired capture records browser-received Reactor video and writes a Plan C pair after you finish it. The comparison remains semantically aligned visual evidence, not synchronized physical replay.</p></details></section></div><script type="module" src="/static/reactor-live.js"></script>
 """
 _PAIR_BODY = """
-<div class="shell"><div class="pair-top"><a class="back" href="/">← Experiment library</a><div class="row"><span id="pair-name" class="pair-name"></span><span id="status"></span><span id="review-badge"></span></div></div><section class="grid summary-strip" id="summary"></section><section class="grid comparison-grid"><article class="viewport isaac"><div class="viewport-head"><div><span class="badge isaac">Isaac / PhysX</span><h2>Physics-grounded simulation — reference</h2></div></div><div id="isaac-media"></div></article><article class="viewport reactor"><div class="viewport-head"><div><span class="badge reactor">Reactor</span><h2>Neural-world visual evidence — not physics ground truth</h2></div></div><div id="reactor-media"></div></article></section><section class="grid below-grid"><article class="details-card" id="comparison-summary"></article><article class="details-card"><h2>Isaac event timeline</h2><ol class="timeline" id="timeline"></ol></article><article class="details-card review"><h2>Human review</h2><p>Stored as mutable review metadata; raw artifacts are unchanged.</p><select id="review-select" aria-label="Review state"></select><button id="save-review">Save review</button><p class="save-status" id="save-status" role="status"></p></article></section><section class="technical details-card"><details><summary>Experiment metadata</summary><pre id="metadata"></pre></details><details><summary>Comparison record</summary><pre id="comparison-record"></pre></details><details><summary>Artifact manifest</summary><pre id="artifact-manifest"></pre><div class="artifact-links" id="artifact-links"></div></details><details><summary>Raw event timeline</summary><pre id="raw-timeline"></pre></details></section></div>
+<div class="shell"><div class="pair-top"><a class="back" href="/">← Experiment library</a><div class="row"><span id="pair-name" class="pair-name"></span><span id="status"></span><span id="review-badge"></span></div></div><section class="details-card recording-switcher"><label for="pair-selector">Comparison recording</label><select id="pair-selector" aria-label="Choose a paired Isaac and Reactor recording"><option>Loading recordings…</option></select><span class="micro" id="pair-selector-count"></span></section><section class="grid summary-strip" id="summary"></section><section class="grid comparison-grid"><article class="viewport isaac"><div class="viewport-head"><div><span class="badge isaac">Isaac / PhysX</span><h2>Physics-grounded simulation — reference</h2></div></div><div id="isaac-media"></div></article><article class="viewport reactor"><div class="viewport-head"><div><span class="badge reactor">Reactor</span><h2>Neural-world visual evidence — not physics ground truth</h2></div></div><div id="reactor-media"></div></article></section><section class="grid below-grid"><article class="details-card" id="comparison-summary"></article><article class="details-card"><h2>Isaac event timeline</h2><ol class="timeline" id="timeline"></ol></article><article class="details-card review"><h2>Human review</h2><p>Stored as mutable review metadata; raw artifacts are unchanged.</p><select id="review-select" aria-label="Review state"></select><button id="save-review">Save review</button><p class="save-status" id="save-status" role="status"></p></article></section><section class="technical details-card"><details><summary>Experiment metadata</summary><pre id="metadata"></pre></details><details><summary>Comparison record</summary><pre id="comparison-record"></pre></details><details><summary>Artifact manifest</summary><pre id="artifact-manifest"></pre><div class="artifact-links" id="artifact-links"></div></details><details><summary>Raw event timeline</summary><pre id="raw-timeline"></pre></details></section></div><script type="module" src="/static/recording-selector.js"></script>
 """
 _EXPERIMENT_BODY = """
 <div class="shell"><div class="pair-top"><a class="back" href="/">← Experiment library</a><span id="run-name" class="pair-name"></span></div><section class="grid comparison-grid"><article class="viewport" id="standalone-viewport"><div class="viewport-head"><div><span id="standalone-authority" class="badge"></span><h2>Recorded experiment</h2></div></div><div id="standalone-media"></div></article><article class="details-card"><h2>Outcome</h2><div id="standalone-outcome"></div><h2>Event timeline</h2><ol class="timeline" id="standalone-timeline"></ol></article></section><section class="technical details-card"><details><summary>Experiment metadata</summary><pre id="standalone-metadata"></pre></details><details><summary>Artifact manifest</summary><pre id="standalone-artifacts"></pre></details><details><summary>Raw event timeline</summary><pre id="standalone-raw-timeline"></pre></details></section></div>
@@ -95,15 +131,84 @@ if(document.body.dataset.page==='library')library();if(document.body.dataset.pag
 
 
 def _page(body: str, page: str) -> HTMLResponse:
-    return HTMLResponse(f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Physical AI Failure Harness</title><style>{_STYLE}{_THEME_STYLE}</style></head><body data-page='{page}'>{body}<button id='theme-toggle' type='button' aria-label='Toggle color theme'></button><script>{_SCRIPT}</script></body></html>")
+    return HTMLResponse(f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Physical AI Failure Harness</title><style>{_STYLE}{_THEME_STYLE}{_REACTOR_STYLE}{_RECORDING_SELECTOR_STYLE}</style></head><body data-page='{page}'>{body}<button id='theme-toggle' type='button' aria-label='Toggle color theme'></button><script>{_SCRIPT}</script></body></html>")
+
+
+def _mint_reactor_token(api_key: str, max_sessions: int) -> dict[str, Any]:
+    """Mint a model-scoped JWT without exposing the long-lived API key."""
+    payload = json.dumps({"authorization_details": [{"type": "session", "resources": {"models": {"match": ["reactor/lingbot-world-2"]}}, "constraints": {"max_sessions": max_sessions}}]}).encode()
+    request = URLRequest(
+        "https://api.reactor.inc/tokens",
+        data=payload,
+        headers={"Reactor-API-Key": api_key, "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=15) as response:
+            token = json.loads(response.read().decode())
+    except (HTTPError, URLError, TimeoutError) as exc:
+        raise HTTPException(502, "Unable to obtain a Reactor session token") from exc
+    if not isinstance(token.get("jwt"), str):
+        raise HTTPException(502, "Reactor returned an invalid session token")
+    return {"jwt": token["jwt"], "model": "reactor/lingbot-world-2"}
 
 
 def create_app(store: ExperimentStore) -> FastAPI:
     app = FastAPI(title="Physical AI Failure Harness", docs_url=None, redoc_url=None)
+    research = ResearchCampaignStore(store.database_path)
+    paired_capture = PairedCaptureService(store, store.database_path.parent)
+    app.mount("/static", StaticFiles(directory=Path(__file__).with_name("static")), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> HTMLResponse:
         return _page(_LIBRARY_BODY, "library")
+
+    @app.get("/reactor", response_class=HTMLResponse)
+    def reactor_page() -> HTMLResponse:
+        return _page(_REACTOR_BODY, "reactor")
+
+    @app.get("/api/reactor/live-config")
+    def reactor_live_config() -> dict[str, Any]:
+        return {"enabled": bool(os.environ.get("REACTOR_API_KEY")), "model": "reactor/lingbot-world-2"}
+
+    @app.post("/api/reactor/token")
+    def reactor_token() -> dict[str, Any]:
+        api_key = os.environ.get("REACTOR_API_KEY")
+        if not api_key:
+            raise HTTPException(503, "REACTOR_API_KEY is not configured on the dashboard server")
+        try:
+            max_sessions = int(os.environ.get("REACTOR_MAX_LIVE_SESSIONS", "1"))
+        except ValueError as exc:
+            raise HTTPException(500, "REACTOR_MAX_LIVE_SESSIONS must be an integer") from exc
+        if max_sessions < 1:
+            raise HTTPException(500, "REACTOR_MAX_LIVE_SESSIONS must be at least one")
+        return _mint_reactor_token(api_key, max_sessions)
+
+    @app.get("/api/isaac-recordings")
+    def isaac_recordings() -> list[dict[str, Any]]:
+        return [record for record in store.list_experiments() if record["backend"] == "isaac_sim"]
+
+    @app.post("/api/pair-captures", status_code=201)
+    def prepare_pair_capture(payload: PairCaptureCreate) -> dict[str, Any]:
+        model = payload.model or os.environ.get("RESEARCH_MODEL", "gpt-5.6-luna")
+        try:
+            return paired_capture.prepare(payload.isaac_run_id, objective=payload.objective, model=model)
+        except (PairingError, RuntimeError, ValueError) as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.get("/api/pair-captures/{pair_id}/seed")
+    def pair_capture_seed(pair_id: str) -> FileResponse:
+        try:
+            return FileResponse(paired_capture.seed_image(pair_id))
+        except PairingError as error:
+            raise HTTPException(404, str(error)) from error
+
+    @app.post("/api/pair-captures/{pair_id}/recording", status_code=201)
+    async def finish_pair_capture(pair_id: str, request: Request) -> dict[str, Any]:
+        try:
+            return paired_capture.finalize(pair_id, await request.body(), content_type=request.headers.get("content-type", "video/webm"))
+        except PairingError as error:
+            raise HTTPException(400, str(error)) from error
 
     @app.get("/experiments/{run_id}", response_class=HTMLResponse)
     def experiment_page(run_id: str) -> HTMLResponse:
@@ -120,6 +225,45 @@ def create_app(store: ExperimentStore) -> FastAPI:
     @app.get("/api/experiments")
     def experiments() -> list[dict[str, Any]]:
         return store.list_experiments()
+
+    @app.get("/api/campaigns")
+    def campaigns() -> list[dict[str, Any]]:
+        return research.list_campaigns()
+
+    @app.post("/api/campaigns", status_code=201)
+    def create_campaign(payload: CampaignCreate) -> dict[str, Any]:
+        campaign_id = research.create_campaign(
+            payload.objective,
+            experiment_budget=payload.experiment_budget,
+            constraints=payload.constraints,
+            model_provider=payload.model_provider,
+            model_name=payload.model_name,
+        )
+        return research.get_campaign(campaign_id) or {}
+
+    @app.get("/api/campaigns/{campaign_id}")
+    def campaign(campaign_id: str) -> dict[str, Any]:
+        result = research.get_campaign(campaign_id)
+        if not result:
+            raise HTTPException(404, "campaign not found")
+        return {**result, "current_iteration_detail": research.latest_iteration(campaign_id), "events": research.list_events(campaign_id)}
+
+    @app.post("/api/campaigns/{campaign_id}/instructions", status_code=201)
+    def add_campaign_instruction(campaign_id: str, payload: OperatorInstructionCreate) -> dict[str, str]:
+        if not research.get_campaign(campaign_id):
+            raise HTTPException(404, "campaign not found")
+        return {"instruction_id": research.add_instruction(campaign_id, payload.instruction)}
+
+    @app.post("/api/campaigns/{campaign_id}/{command}")
+    def control_campaign(campaign_id: str, command: str) -> dict[str, Any]:
+        transitions = {"pause": CampaignState.PAUSED, "resume": CampaignState.RUNNING, "stop": CampaignState.STOPPED}
+        if command not in transitions:
+            raise HTTPException(404, "unknown campaign command")
+        try:
+            research.transition_campaign(campaign_id, transitions[command])
+        except KeyError as error:
+            raise HTTPException(404, "campaign not found") from error
+        return research.get_campaign(campaign_id) or {}
 
     @app.get("/api/overview")
     def overview() -> dict[str, list[dict[str, Any]]]:

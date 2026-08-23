@@ -133,6 +133,58 @@ class IsaacSimEnvironment(Environment):
         self._require_reset()
         return self._to_observation(self._runtime.observe())
 
+    async def reset_async(self, scenario: Scenario) -> Observation:
+        """Reset through Kit's event loop when embedded in a live application."""
+        self._require_open()
+        reset_async = getattr(self._runtime, "reset_async", None)
+        if reset_async is None:
+            raise RuntimeError("the configured Isaac runtime does not support asynchronous reset")
+        self._config = self._parse_scenario(scenario)
+        self._action_count = 0
+        return self._to_observation(await reset_async(self._config))
+
+    async def step_async(self, action: Action) -> StepResult:
+        """Advance through Kit's event loop when embedded in a live application."""
+        self._require_reset()
+        advance_async = getattr(self._runtime, "advance_async", None)
+        if advance_async is None:
+            raise RuntimeError("the configured Isaac runtime does not support asynchronous stepping")
+        if action.name != "set_planar_velocity":
+            raise ValueError("Isaac Sim v0 supports only 'set_planar_velocity' actions")
+        x_velocity = self._number(action.parameters.get("x"), "action parameter 'x'")
+        y_velocity = self._number(action.parameters.get("y"), "action parameter 'y'")
+        self._runtime.set_planar_velocity(x_velocity, y_velocity)
+        self._action_count += 1
+        events: list[Event] = []
+        assert self._config is not None
+        if (
+            self._config.collapse_after_actions is not None
+            and not self._runtime.observe().support_released
+            and self._action_count >= self._config.collapse_after_actions
+        ):
+            self._runtime.release_support()
+            events.append(
+                Event(
+                    event_type="structural_collapse",
+                    category="environmental",
+                    severity=Severity.HIGH,
+                    catastrophic=self._config.terminal_on_collapse,
+                    details={"triggering_action": self._action_count},
+                )
+            )
+        state = await advance_async(self._config.physics_steps_per_action)
+        observation = self._to_observation(state)
+        done = bool(observation.state["task_complete"]) or (
+            state.support_released and self._config.terminal_on_collapse
+        )
+        return StepResult(
+            simulation_time=state.simulation_time,
+            observation=observation,
+            done=done,
+            events=tuple(events),
+            world_state=dict(observation.state),
+        )
+
     def close(self) -> None:
         if not self._closed:
             self._runtime.close()
@@ -223,17 +275,33 @@ class IsaacSim50Runtime:
     launched.  It is not imported by package initializers or local test runs.
     """
 
-    def __init__(self, sensor_output_dir: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        sensor_output_dir: str | Path | None = None,
+        *,
+        application: Any | None = None,
+    ) -> None:
         try:
             import numpy as np
-            from isaacsim import SimulationApp
         except ImportError as error:
             raise IsaacSimUnavailableError(
                 "Isaac Sim 5.x is required. Run with the AWS container's python.sh."
             ) from error
 
         self._np = np
-        self._app = SimulationApp({"headless": True})
+        self._owns_application = application is None
+        if application is None:
+            try:
+                from isaacsim import SimulationApp
+            except ImportError as error:
+                raise IsaacSimUnavailableError(
+                    "The installed Isaac Sim runtime lacks SimulationApp."
+                ) from error
+            self._app = SimulationApp({"headless": True})
+        else:
+            # NVIDIA's Python Server already owns the Kit application and event
+            # loop. Starting another SimulationApp inside it is unsupported.
+            self._app = application
         try:
             import omni.usd
             from isaacsim.core.api import World
@@ -290,23 +358,68 @@ class IsaacSim50Runtime:
                 mass=20.0,
             )
         )
-        self._camera = self._camera_type(
-            prim_path="/World/OverheadCamera",
-            position=np.array([0.0, -6.0, 6.0]),
-            resolution=(256, 256),
-            frequency=60,
-        )
+        self._camera = self._create_camera(np)
         self._world.reset()
         # ``World.reset()`` restores each DynamicCuboid's default linear and
         # angular velocity. PhysX rejects that reset operation for a body
         # that is already kinematic, so make the support static only after
         # all scene objects have completed their reset lifecycle.
         self._set_beam_kinematic(True)
-        self._camera.initialize()
+        if self._camera is not None:
+            self._camera.initialize()
         self._support_released = False
         self._simulation_time = 0.0
         self._frame_index = 0
         self._world.step(render=True)
+        return self.observe()
+
+    async def reset_async(self, config: IsaacScenarioConfig) -> IsaacRuntimeState:
+        """Build a scene using the asynchronous Kit/Script Editor lifecycle."""
+        if self._owns_application:
+            raise RuntimeError("reset_async requires an existing Kit application")
+        from isaacsim.core.experimental.utils.stage import create_new_stage_async
+
+        self._np.random.seed(config.seed)
+        if self._sensor_output_dir is not None:
+            scenario_key = sha256(config.scenario_id.encode("utf-8")).hexdigest()
+            self._active_sensor_output_dir = self._sensor_output_dir / scenario_key
+        if self._world_type.instance():
+            self._world_type.clear_instance()
+        await create_new_stage_async(template="empty")
+        self._world = self._world_type(stage_units_in_meters=1.0)
+        await self._world.initialize_simulation_context_async()
+        self._world.scene.add_default_ground_plane()
+        np = self._np
+        self._robot = self._world.scene.add(
+            self._dynamic_cuboid(
+                prim_path="/World/RobotProxy",
+                name="robot_proxy",
+                position=np.array(config.robot_start),
+                scale=np.array([0.35, 0.35, 0.35]),
+                color=np.array([0.1, 0.4, 0.9]),
+                mass=5.0,
+            )
+        )
+        self._world.scene.add(
+            self._dynamic_cuboid(
+                prim_path="/World/SupportBeam",
+                name="support_beam",
+                position=np.array([config.target_position[0], config.target_position[1], 2.5]),
+                scale=np.array([1.5, 0.2, 0.2]),
+                color=np.array([0.65, 0.35, 0.1]),
+                mass=20.0,
+            )
+        )
+        self._camera = self._create_camera(np)
+        await self._world.reset_async()
+        self._set_beam_kinematic(True)
+        if self._camera is not None:
+            self._camera.initialize()
+        self._support_released = False
+        self._simulation_time = 0.0
+        self._frame_index = 0
+        self._world.step_async()
+        await self._app.next_update_async()
         return self.observe()
 
     def set_planar_velocity(self, x_velocity: float, y_velocity: float) -> None:
@@ -322,6 +435,14 @@ class IsaacSim50Runtime:
         self._require_world()
         for _ in range(physics_steps):
             self._world.step(render=True)
+        self._simulation_time += physics_steps / 60.0
+        return self.observe()
+
+    async def advance_async(self, physics_steps: int) -> IsaacRuntimeState:
+        self._require_world()
+        for _ in range(physics_steps):
+            self._world.step_async()
+            await self._app.next_update_async()
         self._simulation_time += physics_steps / 60.0
         return self.observe()
 
@@ -343,7 +464,8 @@ class IsaacSim50Runtime:
             # Camera owns render-product subscriptions that must be released first.
             self._camera.destroy()
             self._camera = None
-        self._app.close()
+        if self._owns_application:
+            self._app.close()
 
     def _set_beam_kinematic(self, enabled: bool) -> None:
         stage = self._omni_usd.get_context().get_stage()
@@ -355,13 +477,23 @@ class IsaacSim50Runtime:
         self._beam_kinematic_attribute = attribute
 
     def _capture_camera(self) -> tuple[str, ...]:
-        if self._active_sensor_output_dir is None:
+        if self._active_sensor_output_dir is None or self._camera is None:
             return ()
         self._active_sensor_output_dir.mkdir(parents=True, exist_ok=True)
         path = self._active_sensor_output_dir / f"rgb_{self._frame_index:06d}.npy"
         self._np.save(path, self._camera.get_rgba())
         self._frame_index += 1
         return (str(path),)
+
+    def _create_camera(self, np: Any) -> Any | None:
+        if self._sensor_output_dir is None:
+            return None
+        return self._camera_type(
+            prim_path="/World/OverheadCamera",
+            position=np.array([0.0, -6.0, 6.0]),
+            resolution=(256, 256),
+            frequency=60,
+        )
 
     def _require_world(self) -> None:
         if self._world is None:

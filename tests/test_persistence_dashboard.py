@@ -7,7 +7,10 @@ from PIL import Image
 
 from harness.dashboard.app import create_app
 from harness.media import export_isaac_replay, normalize_reactor_media
+from harness.pairing import PairedCaptureService
 from harness.persistence import ExperimentStore, ReviewState, reindex_runs
+from harness.research.world_prompt import WorldPromptResult
+from harness.schemas import EvaluationResult, ExperimentRecord, Scenario, Severity
 
 
 def _comparison_payload(root: Path) -> dict:
@@ -56,9 +59,75 @@ def test_store_persists_pair_review_and_dashboard_view(tmp_path: Path):
     assert pair_page.status_code == 200
     assert "Physics-grounded simulation — reference" in pair_page.text
     assert "Neural-world visual evidence — not physics ground truth" in pair_page.text
+    assert 'id="pair-selector"' in pair_page.text
+    assert 'src="/static/recording-selector.js"' in pair_page.text
     assert "<details>" in pair_page.text
     assert client.get("/api/experiments/isaac-1").json()["authority"] == "PHYSICS-GROUNDED SIMULATION"
     assert client.put("/api/pairs/pair-1/review", json={"review_state": "valid_discrepancy"}).status_code == 200
+
+
+def test_live_reactor_tab_and_token_guard(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("REACTOR_API_KEY", raising=False)
+    client = TestClient(create_app(ExperimentStore(tmp_path / "experiments.sqlite3")))
+
+    page = client.get("/reactor")
+    assert page.status_code == 200
+    assert "Reactor control room" in page.text
+    assert 'src="/static/reactor-live.js"' in page.text
+    assert client.get("/api/reactor/live-config").json()["enabled"] is False
+    assert client.post("/api/reactor/token").status_code == 503
+
+
+def test_paired_capture_persists_browser_video_as_a_plan_c_pair(tmp_path: Path):
+    runs = tmp_path / "runs"
+    run_dir = runs / "isaac" / "run-1"
+    camera = runs / "isaac" / "camera" / "capture" / "rgb_000000.npy"
+    camera.parent.mkdir(parents=True); run_dir.mkdir(parents=True)
+    np.save(camera, np.zeros((12, 16, 4), dtype=np.uint8))
+    scenario = Scenario(
+        environment="isaac_sim", task="reach_target", seed=7,
+        parameters={"target_position": [2.0, 0.0]}, hazards={"collapse_after_actions": 3},
+    )
+    (run_dir / "trajectory.jsonl").write_text(
+        json.dumps({"record_type": "initial_observation", "observation": {"sensor_refs": [str(camera)]}}) + "\n"
+    )
+    record = ExperimentRecord(
+        "isaac-run", scenario, "isaac_sim", str(run_dir / "trajectory.jsonl"),
+        EvaluationResult(False, True, "structural_collapse", Severity.HIGH, terminal=True),
+        "2026-01-01T00:00:00+00:00",
+    )
+    store = ExperimentStore(runs / "experiments.sqlite3")
+    store.upsert_experiment(record, run_directory=run_dir)
+
+    class FakePromptModel:
+        def create_prompt(self, request):
+            assert request.initial_frame_path.is_file()
+            assert request.isaac_hazards["collapse_after_actions"] == 3
+            return WorldPromptResult("A blue robot approaches an unstable support beam.", "resp_prompt")
+
+    service = PairedCaptureService(store, runs, prompt_factory=lambda _model: FakePromptModel())
+    prepared = service.prepare("isaac-run", objective="Compare collapse visuals", model="test-model")
+    assert Path(prepared["initial_frame_path"]).is_file()
+    result = service.finalize(prepared["pair_id"], b"webm-bytes", content_type="video/webm")
+
+    pair = store.get_pair(result["pair_id"])
+    assert pair is not None
+    assert pair["isaac_run_id"] == "isaac-run"
+    reactor = store.get_experiment(result["reactor_run_id"])
+    assert reactor is not None
+    assert any(item["kind"] == "video" for item in store.artifacts_for("experiment", reactor["run_id"]))
+
+
+def test_dashboard_exposes_minimal_research_campaign_controls(tmp_path: Path):
+    client = TestClient(create_app(ExperimentStore(tmp_path / "experiments.sqlite3")))
+    created = client.post("/api/campaigns", json={"objective": "Find collapse boundary", "experiment_budget": 2, "model_provider": "openai", "model_name": "gpt-5.6-luna"})
+    assert created.status_code == 201
+    campaign_id = created.json()["campaign_id"]
+    assert client.post(f"/api/campaigns/{campaign_id}/instructions", json={"instruction": "Use low speeds."}).status_code == 201
+    assert client.post(f"/api/campaigns/{campaign_id}/pause").json()["status"] == "paused"
+    detail = client.get(f"/api/campaigns/{campaign_id}").json()
+    assert detail["current_iteration_detail"] is None
+    assert any(event["event_type"] == "campaign_paused" for event in detail["events"])
 
 
 def test_reindex_rebuilds_standard_and_paired_run_index(tmp_path: Path):

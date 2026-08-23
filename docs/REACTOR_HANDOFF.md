@@ -23,13 +23,20 @@ available as authoritative structured output from the Reactor video session.
 An image-based classifier, if later needed, must be a separate evaluator that
 records confidence and media evidence rather than ground truth.
 
-## Live validation handoff
+## Live browser transport
 
-Implement a `ReactorSession` transport only after model access is enabled for
-`REACTOR_API_KEY`. Verify the currently enabled model identifier and SDK API,
-then run a short session with a checked-in-safe local seed image supplied at
-runtime. The transport must write received chunk/frame artifacts under the run
-directory and return their paths as `ReactorVideoChunk.sensor_refs`.
+The dashboard now exposes `/reactor`, a browser-side LingBot World 2 transport.
+The FastAPI server exchanges `REACTOR_API_KEY` for a short-lived,
+model-scoped session token, and the browser uses Reactor's official JavaScript
+SDK to connect, upload the user-selected seed image, set prompt/seed, render
+`main_video`, and apply live navigation controls. The long-lived key stays on
+the server.
+
+The `ReactorSession` protocol remains the harness-side recording boundary.
+The next integration phase should implement a session that persists received
+chunks under a run directory and returns their paths as
+`ReactorVideoChunk.sensor_refs`; do not route live browser media through that
+adapter until run ownership and recording lifecycle are defined.
 
 This can be developed in WSL or on the AWS workstation because it is a remote
 client. It does not require the Isaac container. Keep the validated Isaac

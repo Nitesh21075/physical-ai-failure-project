@@ -36,6 +36,11 @@ def main() -> None:
         required=True,
         help="Directory for trajectory artifacts",
     )
+    parser.add_argument(
+        "--disable-camera",
+        action="store_true",
+        help="Diagnostic mode: run physics without creating an RTX camera.",
+    )
     args = parser.parse_args()
 
     scenario = Scenario(
@@ -48,7 +53,9 @@ def main() -> None:
         # headless container smoke test deterministic and bounded.
         hazards={"collapse_after_actions": 3, "terminal_on_collapse": True},
     )
-    runtime = IsaacSim50Runtime(sensor_output_dir=args.runs_dir / "camera")
+    runtime = IsaacSim50Runtime(
+        sensor_output_dir=None if args.disable_camera else args.runs_dir / "camera"
+    )
     environment = IsaacSimEnvironment(runtime)
     orchestrator = Orchestrator(
         environment=environment,
