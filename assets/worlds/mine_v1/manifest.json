@@ -13,13 +13,16 @@
     "roof_beam": "/World/FailureZones/Zone_RoofSupport/BeamPrimary",
     "roof_support": "/World/FailureZones/Zone_RoofSupport/SupportPrimary",
     "roof_interaction_target": "/World/FailureZones/Zone_RoofSupport/InteractionTarget",
+    "roof_push_face": "/World/FailureZones/Zone_RoofSupport/SupportPrimary/PushFace",
     "rock_01": "/World/FailureZones/Zone_Rockfall/Rock01",
     "rock_02": "/World/FailureZones/Zone_Rockfall/Rock02",
     "rock_retainer": "/World/FailureZones/Zone_Rockfall/RetainingObject",
+    "rock_retainer_push_face": "/World/FailureZones/Zone_Rockfall/RetainingObject/PushFace",
     "debris_01": "/World/FailureZones/Zone_Debris/Debris01",
     "debris_02": "/World/FailureZones/Zone_Debris/Debris02",
     "debris_interaction_target": "/World/FailureZones/Zone_Debris/InteractionTarget",
-    "robot": "/World/Robot"
+    "robot": "/World/Robot",
+    "robot_bumper": "/World/Robot/FrontBumper"
   },
   "cameras": {
     "research": "/World/Sensors/ResearchCamera",
@@ -34,17 +37,32 @@
     "roof_support": {
       "root": "/World/FailureZones/Zone_RoofSupport",
       "physical_status": "operational",
-      "mechanism": "A dynamic beam rests on a separate dynamic support. Moving the support away removes contact and gravity drops the beam."
+      "mechanism": "A rover can physically push SupportPrimary/PushFace in positive Y. The dynamic beam rests on the separate support, so removed contact lets gravity drop it."
     },
     "rockfall": {
       "root": "/World/FailureZones/Zone_Rockfall",
-      "physical_status": "staged",
-      "mechanism": "Two dynamic loose rocks rest on a ledge behind a removable kinematic retainer."
+      "physical_status": "rover_interaction_authored_pending_physx_smoke",
+      "mechanism": "A rover can push the dynamic RetainingObject/PushFace in positive Y, clearing the sloped ledge route for two dynamic loose rocks."
     },
     "debris": {
       "root": "/World/FailureZones/Zone_Debris",
       "physical_status": "staged",
       "mechanism": "Two dynamic debris blocks visibly obstruct the drift."
+    }
+  },
+  "rover_interactions": {
+    "control_contract": "The v1 proxy accepts controller-supplied planar velocity. Its bumper and chassis produce ordinary rigid-body contact impulses; it has no scripted collapse action and no wheel-articulation/traction model.",
+    "roof_support_push": {
+      "approach": "Navigate the rover to the negative-Y side of SupportPrimary, then drive in positive Y into roof_push_face.",
+      "success_signal": "SupportPrimary has translated sufficiently in positive Y and BeamPrimary loses support contact."
+    },
+    "rockfall_release": {
+      "approach": "Navigate to the negative-Y side of RetainingObject, then drive in positive Y into rock_retainer_push_face.",
+      "success_signal": "RetainingObject clears the ledge route and the loose rocks may roll under gravity."
+    },
+    "debris_clearance": {
+      "approach": "Drive into either debris rigid body using the rover bumper/chassis; there is no special trigger.",
+      "success_signal": "Debris changes pose or clears the intended travel corridor."
     }
   },
   "safe_override_operations": [

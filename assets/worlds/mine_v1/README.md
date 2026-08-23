@@ -31,6 +31,31 @@ BeamPrimary (dynamic) rests on SupportPrimary (separate body)
 
 There is no timer, scripted collapse event, or scripted switch from kinematic to dynamic for `BeamPrimary`. The validation smoke test uses an external pose perturbation of the support, then verifies that PhysX has moved the beam down.
 
+## Rover-caused failures
+
+The v1 rover is deliberately a velocity-driven rigid-body proxy, not a fake
+event trigger. Its chassis and `FrontBumper` generate ordinary collision
+impulses; the current controller may drive it in global planar directions,
+while proper wheel articulation/traction remains a later robot-asset swap.
+
+- **Roof support:** approach the negative-Y side of
+  `SupportPrimary/PushFace`, then drive in positive Y. The support is a
+  distinct 22 kg body; moving it clear of the beam removes the only intended
+  support and gravity causes the failure.
+- **Rockfall:** approach the negative-Y side of
+  `RetainingObject/PushFace`, then drive in positive Y. The dynamic retainer
+  moves clear of the down-slope route, allowing the loose rocks to roll from
+  the separate tilted ledge.
+- **Debris:** drive the bumper/chassis into `Debris01` or `Debris02`; both are
+  independent rigid bodies and require no special trigger.
+
+These interaction recipes are registered in `manifest.json`. They are world
+contracts for a future world-aware worker; the currently documented v1 Isaac
+Worker remains intentionally limited to the original reference scene and does
+not yet load or command this world. A future worker should map normal rover
+movement commands to contact attempts and observe body poses/contact outcomes,
+not expose an artificial `collapse` command.
+
 ## Validate in the AWS Isaac container
 
 Run from the repository checkout that contains this world:

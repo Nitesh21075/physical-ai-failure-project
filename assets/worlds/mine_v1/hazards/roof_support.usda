@@ -6,8 +6,8 @@
 def Xform "Zone_RoofSupport" (
     customData = {
         string harness_hazard_type = "unsupported_beam_collapse"
-        string harness_activation = "move SupportPrimary away in an experiment override or through physical contact"
-        string harness_physical_mechanism = "dynamic BeamPrimary is supported only by SupportPrimary; no timer or scripted body-state toggle"
+        string harness_activation = "rover pushes the exposed SupportPrimary/PushFace in positive Y, or an experiment override moves SupportPrimary"
+        string harness_physical_mechanism = "dynamic BeamPrimary is supported only by SupportPrimary; rover contact can displace that support; no timer or scripted body-state toggle"
         string harness_status = "physically_operational"
     }
 )
@@ -49,7 +49,7 @@ def Xform "Zone_RoofSupport" (
         customData = {
             string harness_role = "movable_roof_support"
             string harness_interactive = "true"
-            string harness_experiment_operation = "author a stronger override with a translated xform; use kinematic mode for deterministic displacement"
+            string harness_experiment_operation = "rover may push PushFace in positive Y; an override may translate this body or use kinematic mode for deterministic displacement"
         }
     )
     {
@@ -57,7 +57,7 @@ def Xform "Zone_RoofSupport" (
         uniform token[] xformOpOrder = ["xformOp:translate"]
         bool physics:rigidBodyEnabled = true
         bool physics:kinematicEnabled = false
-        float physics:mass = 45
+        float physics:mass = 22
         def Cube "CollisionAndVisual" (
             prepend apiSchemas = ["PhysicsCollisionAPI"]
         )
@@ -66,6 +66,7 @@ def Xform "Zone_RoofSupport" (
             uniform token[] xformOpOrder = ["xformOp:scale"]
             bool physics:collisionEnabled = true
             rel material:binding = </World/Looks/SafetyYellow>
+            rel material:binding:physics = </World/PhysicsMaterials/SteelContact>
         }
         def Cube "BasePlate"
         {
@@ -73,6 +74,22 @@ def Xform "Zone_RoofSupport" (
             float3 xformOp:scale = (0.60, 0.60, 0.03)
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
             rel material:binding = </World/Looks/Steel>
+        }
+        def Cube "PushFace" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+            customData = {
+                string harness_role = "rover_contact_surface"
+                string harness_push_direction = "+Y"
+                string harness_effect = "displaces SupportPrimary out from below BeamPrimary"
+            }
+        )
+        {
+            double3 xformOp:translate = (0, -0.62, -1.03)
+            float3 xformOp:scale = (0.62, 0.13, 0.25)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/SafetyYellow>
+            rel material:binding:physics = </World/PhysicsMaterials/SteelContact>
         }
     }
 
@@ -83,11 +100,11 @@ def Xform "Zone_RoofSupport" (
         }
     )
     {
-        double3 xformOp:translate = (3.5, -0.85, 1.1)
+        double3 xformOp:translate = (3.5, -1.02, 0.50)
         uniform token[] xformOpOrder = ["xformOp:translate"]
         def Cylinder "Marker"
         {
-            float radius = 0.18
+            float radius = 0.15
             float height = 0.08
             double3 xformOp:translate = (0, 0, 0.04)
             uniform token[] xformOpOrder = ["xformOp:translate"]

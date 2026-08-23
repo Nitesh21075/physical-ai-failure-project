@@ -19,4 +19,25 @@ def Xform "World"
         int physxScene:solverVelocityIterationCount = 2
         bool physxScene:enableCCD = true
     }
+
+    def Scope "PhysicsMaterials"
+    {
+        def Material "RoughConcrete" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            float physics:staticFriction = 0.85
+            float physics:dynamicFriction = 0.70
+            float physics:restitution = 0.05
+        }
+
+        def Material "SteelContact" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            float physics:staticFriction = 0.55
+            float physics:dynamicFriction = 0.42
+            float physics:restitution = 0.08
+        }
+    }
 }

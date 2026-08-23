@@ -9,13 +9,14 @@ def Xform "Robot" (
         string harness_role = "inspection_robot_proxy"
         string harness_asset_policy = "self-contained proxy; replace reference at /World/Robot with compatible robot asset when one is approved"
         string harness_interactive = "true"
+        string harness_control_model = "velocity-driven rigid-body rover proxy; contact impulses are physical but wheel/traction dynamics are intentionally deferred"
     }
 )
 {
     double3 xformOp:translate = (-6.0, -1.0, 0.48)
     uniform token[] xformOpOrder = ["xformOp:translate"]
     bool physics:rigidBodyEnabled = true
-    float physics:mass = 38
+    float physics:mass = 55
     def Cube "Chassis" (
         prepend apiSchemas = ["PhysicsCollisionAPI"]
     )
@@ -24,6 +25,21 @@ def Xform "Robot" (
         uniform token[] xformOpOrder = ["xformOp:scale"]
         bool physics:collisionEnabled = true
         rel material:binding = </World/Looks/RobotBlue>
+        rel material:binding:physics = </World/PhysicsMaterials/RoughConcrete>
+    }
+    def Cube "FrontBumper" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+        customData = {
+            string harness_role = "rover_contact_bumper"
+        }
+    )
+    {
+        double3 xformOp:translate = (0.72, 0, -0.08)
+        float3 xformOp:scale = (0.10, 0.48, 0.16)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        bool physics:collisionEnabled = true
+        rel material:binding = </World/Looks/SafetyYellow>
+        rel material:binding:physics = </World/PhysicsMaterials/SteelContact>
     }
     def Cube "SensorMast"
     {
