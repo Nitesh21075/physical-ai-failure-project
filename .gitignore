@@ -1,0 +1,36 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+.env
+.env.*
+!.env.example
+*:Zone.Identifier
+
+# Generated experiment artifacts
+runs/
+artifacts/
+media/
+*.mp4
+*.webm
+*.avi
+*.mov
+*.bag
+*.npy
+*.npz
+*.pt
+*.pth
+*.onnx
+
+# Isaac Sim / Omniverse caches and local data
+docker/isaac-sim/
+.issac/
+.omniverse/
+.cache/
+logs/
+
+# Local editor and OS metadata
+.DS_Store
+.vscode/
+.idea/
