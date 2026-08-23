@@ -82,9 +82,13 @@ def export_isaac_replay(run_directory: str | Path, fps: int = 5) -> dict[str, An
     output = run_directory / "media" / "isaac_replay"
     frames_dir = output / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
+    # These are derived files.  Remove only our own previous previews so a
+    # re-export cannot accidentally retain a frame from an earlier run.
+    for stale_preview in frames_dir.glob("frame_*.png"):
+        stale_preview.unlink()
     png_frames: list[Path] = []
-    for index, source in enumerate(source_frames):
-        target = frames_dir / f"frame_{index:04d}.png"
+    for source in source_frames:
+        target = frames_dir / f"frame_{len(png_frames):04d}.png"
         if _write_png(source, target):
             png_frames.append(target)
     if not png_frames:

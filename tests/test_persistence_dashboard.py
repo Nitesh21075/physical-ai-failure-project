@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from harness.dashboard.app import create_app
+from harness.media import export_isaac_replay, normalize_reactor_media
 from harness.persistence import ExperimentStore, ReviewState, reindex_runs
 
 
@@ -51,7 +52,12 @@ def test_store_persists_pair_review_and_dashboard_view(tmp_path: Path):
     detail = client.get("/api/pairs/pair-1").json()
     assert detail["authority"]["isaac"] == "PHYSICS-GROUNDED SIMULATION"
     assert detail["isaac_timeline"][-1]["kind"] == "termination"
-    assert client.get("/pairs/pair-1").status_code == 200
+    pair_page = client.get("/pairs/pair-1")
+    assert pair_page.status_code == 200
+    assert "Physics-grounded simulation — reference" in pair_page.text
+    assert "Neural-world visual evidence — not physics ground truth" in pair_page.text
+    assert "<details>" in pair_page.text
+    assert client.get("/api/experiments/isaac-1").json()["authority"] == "PHYSICS-GROUNDED SIMULATION"
     assert client.put("/api/pairs/pair-1/review", json={"review_state": "valid_discrepancy"}).status_code == 200
 
 
@@ -76,3 +82,30 @@ def test_reindex_rebuilds_standard_and_paired_run_index(tmp_path: Path):
     artifacts = store.artifacts_for("experiment", "run-1")
     assert any(item["kind"] == "video" for item in artifacts)
     assert store.get_pair("pair-1") is not None
+
+
+def test_media_export_and_reactor_manifest_preserve_authority_boundary(tmp_path: Path):
+    run_dir = tmp_path / "runs" / "isaac" / "run-1"
+    camera_dir = run_dir.parent / "camera" / "capture"
+    run_dir.mkdir(parents=True)
+    camera_dir.mkdir(parents=True)
+    np.save(camera_dir / "invalid.npy", np.zeros((4,), dtype=np.uint8))
+    np.save(camera_dir / "rgb.npy", np.zeros((12, 16, 4), dtype=np.uint8))
+    (run_dir / "trajectory.jsonl").write_text(
+        json.dumps({"record_type": "initial_observation", "observation": {"sensor_refs": [str(camera_dir / "invalid.npy"), str(camera_dir / "rgb.npy")]}}) + "\n"
+    )
+    replay = export_isaac_replay(run_dir)
+    assert Path(replay["video_path"]).is_file()
+    assert [Path(path).name for path in replay["preview_frame_paths"]] == ["frame_0000.png"]
+
+    reactor_dir = tmp_path / "reactor"
+    frames = reactor_dir / "frames"
+    frames.mkdir(parents=True)
+    frame = frames / "chunk-0001.png"
+    Image.new("RGB", (16, 12), "black").save(frame)
+    (reactor_dir / "summary.json").write_text(json.dumps({"chunks": [{"index": 1, "elapsed_ms": 42}]}))
+    manifest = normalize_reactor_media(reactor_dir, [frame])
+    assert Path(manifest["derived_video_path"]).is_file()
+    assert manifest["media_sequence"] == [{"position": 0, "path": str(frame)}]
+    assert manifest["chunk_metadata"] == [{"index": 1, "elapsed_ms": 42}]
+    assert "synchronized" in manifest["timing_note"]

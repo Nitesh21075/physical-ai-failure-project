@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -69,6 +70,27 @@ def _record_from_run(run_directory: Path) -> dict[str, Any] | None:
     }
 
 
+def _derived_isaac_artifacts(run_directory: Path) -> list[tuple[str, Path, dict[str, Any]]]:
+    """Export valid raw frames without making indexing depend on FFmpeg/media.
+
+    The raw arrays are already indexed and authoritative.  A partial camera
+    capture therefore remains discoverable even when it cannot yield a replay.
+    """
+    try:
+        replay = export_isaac_replay(run_directory)
+    except (FileNotFoundError, ValueError, OSError, subprocess.CalledProcessError):
+        return []
+    return [
+        *(
+            ("image", Path(path), {"derived_from": "raw_sensor_frame"})
+            for path in replay["preview_frame_paths"]
+        ),
+        ("video", Path(replay["video_path"]), {"derived_from": "raw_sensor_frame"}),
+        ("thumbnail", Path(replay["thumbnail_path"]), {"derived_from": "raw_sensor_frame"}),
+        ("media_manifest", Path(replay["manifest_path"]), {"derived_from": "raw_sensor_frame"}),
+    ]
+
+
 def _index_pair(store: ExperimentStore, comparison_path: Path, project_root: Path) -> tuple[int, int]:
     payload = _read_json(comparison_path)
     matched = payload["matched_experiment"]
@@ -82,12 +104,7 @@ def _index_pair(store: ExperimentStore, comparison_path: Path, project_root: Pat
             run_artifacts = _run_artifacts(trajectory.parent, project_root)
             artifacts.extend(run_artifacts)
             if any(kind == "raw_sensor_frame" for kind, _, _ in run_artifacts):
-                replay = export_isaac_replay(trajectory.parent)
-                artifacts.extend([
-                    ("video", Path(replay["video_path"]), {"derived_from": "raw_sensor_frame"}),
-                    ("thumbnail", Path(replay["thumbnail_path"]), {"derived_from": "raw_sensor_frame"}),
-                    ("media_manifest", Path(replay["manifest_path"]), {"derived_from": "raw_sensor_frame"}),
-                ])
+                artifacts.extend(_derived_isaac_artifacts(trajectory.parent))
         store.replace_artifacts("experiment", record["run_id"], artifacts)
         count += 1
     store.upsert_pair(payload, comparison_path, created_at=_created_at(comparison_path))
@@ -121,18 +138,18 @@ def reindex_runs(store: ExperimentStore, runs_root: str | Path) -> dict[str, int
         if record["backend"] == "isaac_sim":
             raw_frames = [path for kind, path, _ in artifacts if kind == "raw_sensor_frame"]
             if raw_frames:
-                replay = export_isaac_replay(run_directory)
-                artifacts.extend([
-                    ("video", Path(replay["video_path"]), {"derived_from": "raw_sensor_frame"}),
-                    ("thumbnail", Path(replay["thumbnail_path"]), {"derived_from": "raw_sensor_frame"}),
-                    ("media_manifest", Path(replay["manifest_path"]), {"derived_from": "raw_sensor_frame"}),
-                ])
+                artifacts.extend(_derived_isaac_artifacts(run_directory))
         store.replace_artifacts("experiment", record["run_id"], artifacts)
         experiments += 1
-    for pair in store.list_pairs():
-        reactor = store.get_experiment(pair["reactor_run_id"])
-        if reactor and reactor["run_directory"]:
-            normalized = normalize_reactor_media(reactor["run_directory"], [item["path"] for item in store.artifacts_for("experiment", reactor["run_id"])])
-            store.register_artifact("experiment", reactor["run_id"], "thumbnail", normalized["thumbnail_path"], {"derived_from": "reactor_visual_evidence"}) if normalized["thumbnail_path"] else None
+    for reactor in store.list_experiments():
+        if reactor["backend"].startswith("reactor/") and reactor["run_directory"]:
+            normalized = normalize_reactor_media(
+                reactor["run_directory"],
+                [item["path"] for item in store.artifacts_for("experiment", reactor["run_id"])],
+            )
+            if normalized["thumbnail_path"]:
+                store.register_artifact("experiment", reactor["run_id"], "thumbnail", normalized["thumbnail_path"], {"derived_from": "reactor_visual_evidence"})
+            if normalized["derived_video_path"]:
+                store.register_artifact("experiment", reactor["run_id"], "video", normalized["derived_video_path"], {"derived_from": "reactor_visual_frames", "fps": 5})
             store.register_artifact("experiment", reactor["run_id"], "media_manifest", normalized["manifest_path"], {"native_metadata_path": normalized["native_metadata_path"]})
     return {"experiments": experiments, "pairs": pairs}

@@ -19,7 +19,9 @@ For Isaac runs, this preserves `.npy` RGBA arrays and writes derived files under
 `<run>/media/isaac_replay/`: PNG preview frames, `thumbnail.png`, `replay.mp4`,
 and `media.json`. Invalid/empty early camera arrays are preserved but skipped by
 the exporter. For Reactor, `media/reactor/media.json` lists the ordered saved
-sequence and native summary reference; it makes no physical-state claim.
+sequence and native summary reference. When saved frames are available,
+reindexing also derives `media/reactor/replay.mp4` for playback while preserving
+the source frames; it makes no physical-state claim.
 
 ## Dashboard
 
@@ -31,9 +33,12 @@ Start only on the AWS workstation loopback interface:
 
 Available routes:
 
-- `/` — paired experiment list.
+- `/` — paired Plan C experiments plus standalone recorded runs.
 - `/pairs/<pair_id>` — side-by-side Plan C review and Isaac event timeline.
+- `/experiments/<run_id>` — standalone experiment replay, artifacts, and timeline.
 - `/api/experiments` — indexed experiment JSON.
+- `/api/experiments/<run_id>` — standalone experiment view data.
+- `/api/overview` — pair and standalone-run data used by the index page.
 - `/api/pairs` — indexed pair JSON.
 - `/api/pairs/<pair_id>` — pair detail JSON used by the UI.
 - `PUT /api/pairs/<pair_id>/review` — persists one allowed review state.
